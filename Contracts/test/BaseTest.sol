@@ -104,7 +104,7 @@ abstract contract BaseTest is Test {
         return
             ISingleRWA_Vault.InitParams({
                 asset: address(usdc),
-                name: "MantleYield T-Bill Vault",
+                name: "StellarYield T-Bill Vault",
                 symbol: "myTBILL",
                 admin: admin,
                 zkmeVerifier: address(zkmeVerifier),

@@ -1,7 +1,7 @@
 {
-  "name": "mantleyield-backend",
+  "name": "stellaryield-backend",
   "version": "1.0.0",
-  "description": "MantleYield RWA Vault Backend API with AI Command Processing",
+  "description": "StellarYield RWA Vault Backend API with AI Command Processing",
   "main": "index.js",
   "type": "module",
   "scripts": {

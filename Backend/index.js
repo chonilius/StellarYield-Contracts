@@ -19,7 +19,7 @@ app.use(cors());
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-const provider = new ethers.JsonRpcProvider(process.env.MANTLE_RPC_URL);
+const provider = new ethers.JsonRpcProvider(process.env.STELLAR_RPC_URL);
 
 // Contract ABIs (simplified - import full ABIs in production)
 const VAULT_ABI = [
@@ -60,7 +60,7 @@ const USDC_ADDRESS = process.env.USDC_ADDRESS;
 // AI COMMAND PARSER
 // ============================================
 
-const SYSTEM_PROMPT = `You are an AI assistant for MantleYield, an RWA (Real World Asset) yield vault platform on Mantle blockchain.
+const SYSTEM_PROMPT = `You are an AI assistant for StellarYield, an RWA (Real World Asset) yield vault platform on Stellar blockchain.
 
 Parse user commands into structured actions. Return ONLY valid JSON, no markdown, no explanation.
 
@@ -382,7 +382,7 @@ async function executeCommand(parsedCommand, userAddress) {
             return {
                 success: true,
                 type: "info",
-                message: `**MantleYield Commands:**
+                message: `**StellarYield Commands:**
 
 • **"list vaults"** - See all available vaults
 • **"deposit [amount] into [vault]"** - Deposit USDC into a vault
@@ -946,7 +946,7 @@ app.get('/health', (req, res) => {
         config: {
             factoryConfigured: !!FACTORY_ADDRESS,
             usdcConfigured: !!USDC_ADDRESS,
-            rpcConfigured: !!process.env.MANTLE_RPC_URL,
+            rpcConfigured: !!process.env.STELLAR_RPC_URL,
             aiConfigured: !!process.env.GEMINI_API_KEY
         }
     });
@@ -959,12 +959,12 @@ app.get('/health', (req, res) => {
 app.listen(PORT, () => {
     console.log(`
 ╔═══════════════════════════════════════════════════════════╗
-║           MantleYield API Server                          ║
+║           StellarYield API Server                          ║
 ╠═══════════════════════════════════════════════════════════╣
 ║  Port:     ${PORT}                                            ║
 ║  Factory:  ${FACTORY_ADDRESS ? FACTORY_ADDRESS.slice(0, 10) + '...' : 'Not configured'}                           ║
 ║  USDC:     ${USDC_ADDRESS ? USDC_ADDRESS.slice(0, 10) + '...' : 'Not configured'}                           ║
-║  RPC:      ${process.env.MANTLE_RPC_URL ? 'Configured' : 'Not configured'}                                  ║
+║  RPC:      ${process.env.STELLAR_RPC_URL ? 'Configured' : 'Not configured'}                                  ║
 ║  AI:       ${process.env.GEMINI_API_KEY ? 'Configured' : 'Not configured'}                                  ║
 ╚═══════════════════════════════════════════════════════════╝
     `);

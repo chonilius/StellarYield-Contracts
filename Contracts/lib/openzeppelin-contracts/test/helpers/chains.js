@@ -17,7 +17,7 @@ const ethereum = {
   Moonbeam: 1284n,
   centrifuge: 2031n,
   kava: 2222n,
-  mantle: 5000n,
+  stellar: 5000n,
   base: 8453n,
   immutable: 13371n,
   arbitrum: 42161n,

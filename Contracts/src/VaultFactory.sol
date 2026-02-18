@@ -45,7 +45,7 @@ contract VaultFactory is IVaultFactory {
     address public defaultZkmeVerifier;
     address public defaultCooperator;
 
-    /// @notice Default deposit token (e.g., USDC on Mantle)
+    /// @notice Default deposit token (e.g., USDC on Stellar)
     address public defaultAsset;
 
     // ============================================
