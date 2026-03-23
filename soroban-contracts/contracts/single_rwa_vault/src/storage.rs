@@ -66,6 +66,8 @@ pub enum DataKey {
     // --- Vault state ---
     VaultState,
     Paused,
+    /// Reentrancy lock — true while a guarded function is executing.
+    Locked,
 
     // --- Epoch / yield ---
     CurrentEpoch,
@@ -183,6 +185,8 @@ instance_get!(get_vault_state, VaultState, VaultState);
 instance_put!(put_vault_state, VaultState, VaultState);
 instance_get!(get_paused, Paused, bool);
 instance_put!(put_paused, Paused, bool);
+instance_get!(get_locked, Locked, bool);
+instance_put!(put_locked, Locked, bool);
 
 // Epoch / yield (global)
 instance_get!(get_current_epoch,           CurrentEpoch,           u32);
