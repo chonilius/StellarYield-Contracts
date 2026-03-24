@@ -6,8 +6,9 @@ use soroban_sdk::{
 };
 
 use crate::{
-    storage::{get_all_vaults, get_single_rwa_vaults, get_vault_info,
-              push_all_vaults, push_single_rwa_vaults, put_vault_info},
+    storage::{get_active_vaults, get_all_vaults, get_single_rwa_vaults, get_vault_count,
+              get_vault_info, push_active_vaults, push_all_vaults, push_single_rwa_vaults,
+              put_vault_info},
     types::{VaultInfo, VaultType},
     VaultFactory, VaultFactoryClient,
 };
@@ -56,6 +57,9 @@ fn inject_vault(e: &Env, factory_id: &Address, active: bool) -> Address {
         put_vault_info(e, &vault, info);
         push_all_vaults(e, vault.clone());
         push_single_rwa_vaults(e, vault.clone());
+        if active {
+            push_active_vaults(e, vault.clone());
+        }
     });
 
     vault
@@ -64,6 +68,215 @@ fn inject_vault(e: &Env, factory_id: &Address, active: bool) -> Address {
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─── ActiveVaults list ────────────────────────────────────────────────────────
+
+/// set_vault_status keeps ActiveVaults in sync: deactivating removes,
+/// reactivating re-adds.
+#[test]
+fn test_set_vault_status_updates_active_list() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, admin) = setup_factory(&e);
+    let factory_id = client.address.clone();
+
+    let vault = inject_vault(&e, &factory_id, true);
+
+    // Initially active — should appear in ActiveVaults.
+    e.as_contract(&factory_id, || {
+        assert!(get_active_vaults(&e).contains(vault.clone()));
+    });
+
+    // Deactivate — must be removed from ActiveVaults.
+    client.set_vault_status(&admin, &vault, &false);
+    e.as_contract(&factory_id, || {
+        assert!(!get_active_vaults(&e).contains(vault.clone()));
+    });
+
+    // Reactivate — must be re-added.
+    client.set_vault_status(&admin, &vault, &true);
+    e.as_contract(&factory_id, || {
+        assert!(get_active_vaults(&e).contains(vault.clone()));
+    });
+}
+
+/// get_active_vaults returns only the active list directly (O(1) read).
+#[test]
+fn test_get_active_vaults_uses_dedicated_list() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, _) = setup_factory(&e);
+    let factory_id = client.address.clone();
+
+    let a = inject_vault(&e, &factory_id, true);
+    inject_vault(&e, &factory_id, false); // inactive
+
+    let active = client.get_active_vaults();
+    assert_eq!(active.len(), 1);
+    assert_eq!(active.get(0).unwrap(), a);
+}
+
+// ─── get_vault_count ──────────────────────────────────────────────────────────
+
+/// get_vault_count reflects the live counter without loading the full list.
+#[test]
+fn test_get_vault_count_tracks_adds_and_removes() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, admin) = setup_factory(&e);
+    let factory_id = client.address.clone();
+
+    assert_eq!(client.get_vault_count(), 0);
+
+    let v1 = inject_vault(&e, &factory_id, false);
+    assert_eq!(client.get_vault_count(), 1);
+
+    let v2 = inject_vault(&e, &factory_id, false);
+    assert_eq!(client.get_vault_count(), 2);
+
+    client.remove_vault(&admin, &v1);
+    assert_eq!(client.get_vault_count(), 1);
+
+    client.remove_vault(&admin, &v2);
+    assert_eq!(client.get_vault_count(), 0);
+}
+
+/// Counter in instance storage matches the list length at all times.
+#[test]
+fn test_vault_count_matches_list_length() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, _) = setup_factory(&e);
+    let factory_id = client.address.clone();
+
+    for _ in 0..5 {
+        inject_vault(&e, &factory_id, true);
+    }
+
+    e.as_contract(&factory_id, || {
+        assert_eq!(get_vault_count(&e) as usize, get_all_vaults(&e).len() as usize);
+    });
+}
+
+// ─── get_vaults_paginated ─────────────────────────────────────────────────────
+
+/// First page returns up to `limit` items starting at offset 0.
+#[test]
+fn test_get_vaults_paginated_first_page() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, _) = setup_factory(&e);
+    let factory_id = client.address.clone();
+
+    let mut all_vaults = soroban_sdk::Vec::new(&e);
+    for _ in 0..5 {
+        all_vaults.push_back(inject_vault(&e, &factory_id, true));
+    }
+
+    let page = client.get_vaults_paginated(&0, &3);
+    assert_eq!(page.len(), 3);
+    assert_eq!(page.get(0).unwrap(), all_vaults.get(0).unwrap());
+    assert_eq!(page.get(2).unwrap(), all_vaults.get(2).unwrap());
+}
+
+/// Second page returns the remaining items.
+#[test]
+fn test_get_vaults_paginated_second_page() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, _) = setup_factory(&e);
+    let factory_id = client.address.clone();
+
+    let mut all_vaults = soroban_sdk::Vec::new(&e);
+    for _ in 0..5 {
+        all_vaults.push_back(inject_vault(&e, &factory_id, true));
+    }
+
+    let page = client.get_vaults_paginated(&3, &3);
+    assert_eq!(page.len(), 2); // only 2 items remain after offset 3
+    assert_eq!(page.get(0).unwrap(), all_vaults.get(3).unwrap());
+    assert_eq!(page.get(1).unwrap(), all_vaults.get(4).unwrap());
+}
+
+/// Offset past the end of the list returns an empty vec.
+#[test]
+fn test_get_vaults_paginated_offset_past_end() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, _) = setup_factory(&e);
+    let factory_id = client.address.clone();
+
+    inject_vault(&e, &factory_id, true);
+    inject_vault(&e, &factory_id, true);
+
+    let page = client.get_vaults_paginated(&10, &5);
+    assert_eq!(page.len(), 0);
+}
+
+/// limit = 0 always returns an empty vec.
+#[test]
+fn test_get_vaults_paginated_zero_limit() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, _) = setup_factory(&e);
+    let factory_id = client.address.clone();
+
+    inject_vault(&e, &factory_id, true);
+
+    let page = client.get_vaults_paginated(&0, &0);
+    assert_eq!(page.len(), 0);
+}
+
+// ─── get_active_vaults_paginated ──────────────────────────────────────────────
+
+/// Only active vaults are included; offset/limit apply to the filtered set.
+#[test]
+fn test_get_active_vaults_paginated_filters_inactive() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, _) = setup_factory(&e);
+    let factory_id = client.address.clone();
+
+    let a1 = inject_vault(&e, &factory_id, true);
+    inject_vault(&e, &factory_id, false); // inactive
+    let a2 = inject_vault(&e, &factory_id, true);
+    inject_vault(&e, &factory_id, false); // inactive
+    let a3 = inject_vault(&e, &factory_id, true);
+
+    // All 3 active vaults with a generous limit.
+    let page = client.get_active_vaults_paginated(&0, &10);
+    assert_eq!(page.len(), 3);
+    assert_eq!(page.get(0).unwrap(), a1);
+    assert_eq!(page.get(1).unwrap(), a2);
+    assert_eq!(page.get(2).unwrap(), a3);
+}
+
+/// Offset skips active vaults only (inactive ones are invisible to pagination).
+#[test]
+fn test_get_active_vaults_paginated_offset_skips_active() {
+    let e = Env::default();
+    e.mock_all_auths();
+
+    let (client, _) = setup_factory(&e);
+    let factory_id = client.address.clone();
+
+    inject_vault(&e, &factory_id, true);  // active[0] — skipped by offset=1
+    let a2 = inject_vault(&e, &factory_id, true);  // active[1]
+    inject_vault(&e, &factory_id, false); // inactive — not counted
+
+    let page = client.get_active_vaults_paginated(&1, &5);
+    assert_eq!(page.len(), 1);
+    assert_eq!(page.get(0).unwrap(), a2);
+}
 
 /// Admin successfully removes an inactive vault.
 #[test]

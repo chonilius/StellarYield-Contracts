@@ -197,7 +197,7 @@ impl VaultFactory {
             panic_with_error!(e, Error::VaultIsActive);
         }
 
-        // Remove from both registry lists
+        // Remove from all registry lists (vault is already inactive — not in ActiveVaults)
         remove_from_all_vaults(e, &vault);
         if info.vault_type == VaultType::SingleRwa {
             remove_from_single_rwa_vaults(e, &vault);
@@ -216,6 +216,14 @@ impl VaultFactory {
 
         let mut info = get_vault_info(e, &vault)
             .unwrap_or_else(|| panic_not_found(e));
+
+        // Keep ActiveVaults in sync when the flag changes.
+        if active && !info.active {
+            push_active_vaults(e, vault.clone());
+        } else if !active && info.active {
+            remove_from_active_vaults(e, &vault);
+        }
+
         info.active = active;
         put_vault_info(e, &vault, info);
         emit_vault_status_changed(e, vault, active);
@@ -226,10 +234,17 @@ impl VaultFactory {
     // View functions
     // ─────────────────────────────────────────────────────────────────
 
+    /// Returns every registered vault address.
+    ///
+    /// **Note:** loads the full vault list from persistent storage.
+    /// For large registries prefer `get_vaults_paginated`.
     pub fn get_all_vaults(e: &Env) -> Vec<Address> {
         get_all_vaults(e)
     }
 
+    /// Returns every registered SingleRWA vault address.
+    ///
+    /// **Note:** loads the full list from persistent storage.
     pub fn get_single_rwa_vaults(e: &Env) -> Vec<Address> {
         get_single_rwa_vaults(e)
     }
@@ -242,22 +257,53 @@ impl VaultFactory {
         get_vault_info(e, &vault).is_some()
     }
 
+    /// Returns the current number of registered vaults.
+    ///
+    /// Reads a dedicated counter from instance storage — does not load the
+    /// full vault list.
     pub fn get_vault_count(e: &Env) -> u32 {
-        get_all_vaults(e).len()
+        get_vault_count(e)
     }
 
+    /// Returns all vaults whose `active` flag is set.
     pub fn get_active_vaults(e: &Env) -> Vec<Address> {
+        get_active_vaults(e)
+    }
+
+    /// Returns a page of vault addresses from the full registry.
+    ///
+    /// `offset` is zero-based. Returns an empty vec when `offset >= total`.
+    /// Returns fewer than `limit` entries when the end of the list is reached.
+    pub fn get_vaults_paginated(e: &Env, offset: u32, limit: u32) -> Vec<Address> {
         let all = get_all_vaults(e);
-        let mut active: Vec<Address> = Vec::new(e);
-        for i in 0..all.len() {
-            let addr = all.get(i).unwrap();
-            if let Some(info) = get_vault_info(e, &addr) {
-                if info.active {
-                    active.push_back(addr);
-                }
-            }
+        let total = all.len();
+        let mut result: Vec<Address> = Vec::new(e);
+        if offset >= total || limit == 0 {
+            return result;
         }
-        active
+        let end = (offset + limit).min(total);
+        for i in offset..end {
+            result.push_back(all.get(i).unwrap());
+        }
+        result
+    }
+
+    /// Returns a page of *active* vault addresses.
+    ///
+    /// `offset` is zero-based within the active-vault list. Returns an empty
+    /// vec when `offset >= active count` or `limit == 0`.
+    pub fn get_active_vaults_paginated(e: &Env, offset: u32, limit: u32) -> Vec<Address> {
+        let active = get_active_vaults(e);
+        let total = active.len();
+        let mut result: Vec<Address> = Vec::new(e);
+        if offset >= total || limit == 0 {
+            return result;
+        }
+        let end = (offset + limit).min(total);
+        for i in offset..end {
+            result.push_back(active.get(i).unwrap());
+        }
+        result
     }
 
     pub fn aggregator_vault(e: &Env) -> Option<Address> {
@@ -395,6 +441,7 @@ impl VaultFactory {
         put_vault_info(e, &vault_addr, info);
         push_all_vaults(e, vault_addr.clone());
         push_single_rwa_vaults(e, vault_addr.clone());
+        push_active_vaults(e, vault_addr.clone()); // new vaults start active
 
         emit_vault_created(e, vault_addr.clone(), VaultType::SingleRwa, name, e.current_contract_address());
 
