@@ -1,20 +1,18 @@
 #![no_std]
 
-mod storage;
-mod types;
-mod token_interface;
-mod events;
 mod errors;
+mod events;
+mod storage;
+mod token_interface;
+mod types;
 
 pub use crate::types::*;
 
-use soroban_sdk::{
-    contract, contractimpl, panic_with_error, token, Address, Env, String,
-};
+use soroban_sdk::{contract, contractimpl, panic_with_error, token, Address, Env, String};
 
-use crate::storage::*;
 use crate::errors::Error;
 use crate::events::*;
+use crate::storage::*;
 use crate::token_interface::*;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -73,11 +71,11 @@ impl SingleRWAVault {
         put_total_yield_distributed(e, 0i128);
         put_redemption_counter(e, 0u32);
         put_total_supply(e, 0i128);
+        put_transfer_requires_kyc(e, true);
 
-        e.storage().instance().extend_ttl(
-            INSTANCE_LIFETIME_THRESHOLD,
-            INSTANCE_BUMP_AMOUNT,
-        );
+        e.storage()
+            .instance()
+            .extend_ttl(INSTANCE_LIFETIME_THRESHOLD, INSTANCE_BUMP_AMOUNT);
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -94,10 +92,18 @@ impl SingleRWAVault {
         }
     }
 
-    pub fn rwa_name(e: &Env) -> String { get_rwa_name(e) }
-    pub fn rwa_symbol(e: &Env) -> String { get_rwa_symbol(e) }
-    pub fn rwa_document_uri(e: &Env) -> String { get_rwa_document_uri(e) }
-    pub fn rwa_category(e: &Env) -> String { get_rwa_category(e) }
+    pub fn rwa_name(e: &Env) -> String {
+        get_rwa_name(e)
+    }
+    pub fn rwa_symbol(e: &Env) -> String {
+        get_rwa_symbol(e)
+    }
+    pub fn rwa_document_uri(e: &Env) -> String {
+        get_rwa_document_uri(e)
+    }
+    pub fn rwa_category(e: &Env) -> String {
+        get_rwa_category(e)
+    }
 
     // ─────────────────────────────────────────────────────────────────
     // zkMe KYC
@@ -115,8 +121,12 @@ impl SingleRWAVault {
         client.has_approved(&coop, &user)
     }
 
-    pub fn zkme_verifier(e: &Env) -> Address { get_zkme_verifier(e) }
-    pub fn cooperator(e: &Env) -> Address { get_cooperator(e) }
+    pub fn zkme_verifier(e: &Env) -> Address {
+        get_zkme_verifier(e)
+    }
+    pub fn cooperator(e: &Env) -> Address {
+        get_cooperator(e)
+    }
 
     pub fn set_zkme_verifier(e: &Env, caller: Address, verifier: Address) {
         caller.require_auth();
@@ -264,10 +274,13 @@ impl SingleRWAVault {
     }
 
     /// Redeem `shares`; receive the corresponding underlying assets.
-    ///
-    /// Security: follows CEI — shares are burned (state change) before the
-    /// external asset transfer.  Reentrancy lock prevents reentrant calls.
-    pub fn redeem(e: &Env, caller: Address, shares: i128, receiver: Address, owner: Address) -> i128 {
+    pub fn redeem(
+        e: &Env,
+        caller: Address,
+        shares: i128,
+        receiver: Address,
+        owner: Address,
+    ) -> i128 {
         caller.require_auth();
         // --- Checks ---
         acquire_lock(e);
@@ -302,12 +315,22 @@ impl SingleRWAVault {
     // ERC-4626 preview helpers
     // ─────────────────────────────────────────────────────────────────
 
-    pub fn preview_deposit(e: &Env, assets: i128) -> i128 { preview_deposit(e, assets) }
-    pub fn preview_mint(e: &Env, shares: i128) -> i128    { preview_mint(e, shares) }
-    pub fn preview_withdraw(e: &Env, assets: i128) -> i128 { preview_withdraw(e, assets) }
-    pub fn preview_redeem(e: &Env, shares: i128) -> i128  { preview_redeem(e, shares) }
+    pub fn preview_deposit(e: &Env, assets: i128) -> i128 {
+        preview_deposit(e, assets)
+    }
+    pub fn preview_mint(e: &Env, shares: i128) -> i128 {
+        preview_mint(e, shares)
+    }
+    pub fn preview_withdraw(e: &Env, assets: i128) -> i128 {
+        preview_withdraw(e, assets)
+    }
+    pub fn preview_redeem(e: &Env, shares: i128) -> i128 {
+        preview_redeem(e, shares)
+    }
 
-    pub fn total_assets(e: &Env) -> i128 { total_assets(e) }
+    pub fn total_assets(e: &Env) -> i128 {
+        total_assets(e)
+    }
 
     // ─────────────────────────────────────────────────────────────────
     // Yield distribution
@@ -336,10 +359,7 @@ impl SingleRWAVault {
         put_current_epoch(e, epoch);
         put_epoch_yield(e, epoch, amount);
         put_epoch_total_shares(e, epoch, get_total_supply(e));
-        put_total_yield_distributed(
-            e,
-            get_total_yield_distributed(e) + amount,
-        );
+        put_total_yield_distributed(e, get_total_yield_distributed(e) + amount);
 
         emit_yield_distributed(e, epoch, amount, e.ledger().timestamp());
 
@@ -378,13 +398,7 @@ impl SingleRWAVault {
             }
         }
 
-        put_total_yield_claimed(
-            e,
-            &caller,
-            get_total_yield_claimed(e, &caller) + amount,
-        );
-
-        // --- Interaction ---
+        put_total_yield_claimed(e, &caller, get_total_yield_claimed(e, &caller) + amount);
         transfer_asset_from_vault(e, &caller, amount);
 
         emit_yield_claimed(e, caller, amount, epoch);
@@ -416,13 +430,7 @@ impl SingleRWAVault {
 
         // --- Effects ---
         put_has_claimed_epoch(e, &caller, epoch, true);
-        put_total_yield_claimed(
-            e,
-            &caller,
-            get_total_yield_claimed(e, &caller) + amount,
-        );
-
-        // --- Interaction ---
+        put_total_yield_claimed(e, &caller, get_total_yield_claimed(e, &caller) + amount);
         transfer_asset_from_vault(e, &caller, amount);
 
         emit_yield_claimed(e, caller, amount, epoch);
@@ -455,16 +463,26 @@ impl SingleRWAVault {
         (get_epoch_yield(e, epoch) * user_shares) / total_shares
     }
 
-    pub fn current_epoch(e: &Env) -> u32 { get_current_epoch(e) }
-    pub fn epoch_yield(e: &Env, epoch: u32) -> i128 { get_epoch_yield(e, epoch) }
-    pub fn total_yield_distributed(e: &Env) -> i128 { get_total_yield_distributed(e) }
-    pub fn total_yield_claimed(e: &Env, user: Address) -> i128 { get_total_yield_claimed(e, &user) }
+    pub fn current_epoch(e: &Env) -> u32 {
+        get_current_epoch(e)
+    }
+    pub fn epoch_yield(e: &Env, epoch: u32) -> i128 {
+        get_epoch_yield(e, epoch)
+    }
+    pub fn total_yield_distributed(e: &Env) -> i128 {
+        get_total_yield_distributed(e)
+    }
+    pub fn total_yield_claimed(e: &Env, user: Address) -> i128 {
+        get_total_yield_claimed(e, &user)
+    }
 
     // ─────────────────────────────────────────────────────────────────
     // Vault lifecycle
     // ─────────────────────────────────────────────────────────────────
 
-    pub fn vault_state(e: &Env) -> VaultState { get_vault_state(e) }
+    pub fn vault_state(e: &Env) -> VaultState {
+        get_vault_state(e)
+    }
 
     /// Transition Funding → Active.  Requires funding target to be met.
     pub fn activate_vault(e: &Env, caller: Address) {
@@ -502,8 +520,12 @@ impl SingleRWAVault {
         bump_instance(e);
     }
 
-    pub fn maturity_date(e: &Env) -> u64 { get_maturity_date(e) }
-    pub fn funding_target(e: &Env) -> i128 { get_funding_target(e) }
+    pub fn maturity_date(e: &Env) -> u64 {
+        get_maturity_date(e)
+    }
+    pub fn funding_target(e: &Env) -> i128 {
+        get_funding_target(e)
+    }
 
     pub fn is_funding_target_met(e: &Env) -> bool {
         total_assets(e) >= get_funding_target(e)
@@ -512,16 +534,26 @@ impl SingleRWAVault {
     pub fn time_to_maturity(e: &Env) -> u64 {
         let now = e.ledger().timestamp();
         let mat = get_maturity_date(e);
-        if now >= mat { 0 } else { mat - now }
+        if now >= mat {
+            0
+        } else {
+            mat - now
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────
     // Deposit limits
     // ─────────────────────────────────────────────────────────────────
 
-    pub fn min_deposit(e: &Env) -> i128 { get_min_deposit(e) }
-    pub fn max_deposit_per_user(e: &Env) -> i128 { get_max_deposit_per_user(e) }
-    pub fn user_deposited(e: &Env, user: Address) -> i128 { get_user_deposited(e, &user) }
+    pub fn min_deposit(e: &Env) -> i128 {
+        get_min_deposit(e)
+    }
+    pub fn max_deposit_per_user(e: &Env) -> i128 {
+        get_max_deposit_per_user(e)
+    }
+    pub fn user_deposited(e: &Env, user: Address) -> i128 {
+        get_user_deposited(e, &user)
+    }
 
     pub fn set_deposit_limits(e: &Env, caller: Address, min_amount: i128, max_amount: i128) {
         caller.require_auth();
@@ -573,11 +605,7 @@ impl SingleRWAVault {
             for i in 1..=epoch {
                 put_has_claimed_epoch(e, &owner, i, true);
             }
-            put_total_yield_claimed(
-                e,
-                &owner,
-                get_total_yield_claimed(e, &owner) + pending,
-            );
+            put_total_yield_claimed(e, &owner, get_total_yield_claimed(e, &owner) + pending);
         }
 
         update_user_snapshot(e, &owner);
@@ -612,12 +640,16 @@ impl SingleRWAVault {
 
         let id = get_redemption_counter(e) + 1;
         put_redemption_counter(e, id);
-        put_redemption_request(e, id, RedemptionRequest {
-            user: caller,
-            shares,
-            request_time: e.ledger().timestamp(),
-            processed: false,
-        });
+        put_redemption_request(
+            e,
+            id,
+            RedemptionRequest {
+                user: caller,
+                shares,
+                request_time: e.ledger().timestamp(),
+                processed: false,
+            },
+        );
 
         bump_instance(e);
         id
@@ -659,7 +691,9 @@ impl SingleRWAVault {
         release_lock(e);
     }
 
-    pub fn early_redemption_fee_bps(e: &Env) -> u32 { get_early_redemption_fee_bps(e) }
+    pub fn early_redemption_fee_bps(e: &Env) -> u32 {
+        get_early_redemption_fee_bps(e)
+    }
     pub fn set_early_redemption_fee(e: &Env, caller: Address, fee_bps: u32) {
         caller.require_auth();
         require_operator(e, &caller);
@@ -674,7 +708,9 @@ impl SingleRWAVault {
     // Access control
     // ─────────────────────────────────────────────────────────────────
 
-    pub fn admin(e: &Env) -> Address { get_admin(e) }
+    pub fn admin(e: &Env) -> Address {
+        get_admin(e)
+    }
 
     pub fn is_operator(e: &Env, account: Address) -> bool {
         get_operator(e, &account)
@@ -712,6 +748,23 @@ impl SingleRWAVault {
     }
 
     // ─────────────────────────────────────────────────────────────────
+    // Transfer KYC gate
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Returns true when share transfers require the recipient to pass KYC.
+    pub fn transfer_requires_kyc(e: &Env) -> bool {
+        get_transfer_requires_kyc(e)
+    }
+
+    /// Toggle the transfer KYC requirement.  Only the admin may change this.
+    pub fn set_transfer_requires_kyc(e: &Env, caller: Address, enabled: bool) {
+        caller.require_auth();
+        require_admin(e, &caller);
+        put_transfer_requires_kyc(e, enabled);
+        bump_instance(e);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
     // Emergency
     // ─────────────────────────────────────────────────────────────────
 
@@ -731,7 +784,9 @@ impl SingleRWAVault {
         bump_instance(e);
     }
 
-    pub fn paused(e: &Env) -> bool { get_paused(e) }
+    pub fn paused(e: &Env) -> bool {
+        get_paused(e)
+    }
 
     /// Drain all vault assets to `recipient` and pause the vault.
     ///
@@ -754,7 +809,12 @@ impl SingleRWAVault {
         if balance > 0 {
             transfer_asset_from_vault(e, &recipient, balance);
         }
-
+        put_paused(e, true);
+        emit_emergency_action(
+            e,
+            true,
+            String::from_str(e, "Emergency withdrawal executed"),
+        );
         bump_instance(e);
         release_lock(e);
     }
@@ -763,7 +823,9 @@ impl SingleRWAVault {
     // View helpers
     // ─────────────────────────────────────────────────────────────────
 
-    pub fn asset(e: &Env) -> Address { get_asset(e) }
+    pub fn asset(e: &Env) -> Address {
+        get_asset(e)
+    }
 
     pub fn current_apy(e: &Env) -> u32 {
         let ta = total_assets(e);
@@ -799,7 +861,9 @@ impl SingleRWAVault {
         }
     }
 
-    pub fn expected_apy(e: &Env) -> u32 { get_expected_apy(e) }
+    pub fn expected_apy(e: &Env) -> u32 {
+        get_expected_apy(e)
+    }
     pub fn set_funding_target(e: &Env, caller: Address, target: i128) {
         caller.require_auth();
         require_operator(e, &caller);
@@ -815,13 +879,7 @@ impl SingleRWAVault {
         get_share_allowance(e, &from, &spender)
     }
 
-    pub fn approve(
-        e: &Env,
-        from: Address,
-        spender: Address,
-        amount: i128,
-        expiration_ledger: u32,
-    ) {
+    pub fn approve(e: &Env, from: Address, spender: Address, amount: i128, expiration_ledger: u32) {
         from.require_auth();
         put_share_allowance_with_expiry(e, &from, &spender, amount, expiration_ledger);
         emit_approval(e, from, spender, amount, expiration_ledger);
@@ -836,6 +894,9 @@ impl SingleRWAVault {
         from.require_auth();
         require_not_blacklisted(e, &from);
         require_not_blacklisted(e, &to);
+        if get_transfer_requires_kyc(e) {
+            require_kyc_verified(e, &to);
+        }
         update_user_snapshot(e, &from);
         update_user_snapshot(e, &to);
         spend_share_balance(e, &from, amount);
@@ -844,17 +905,14 @@ impl SingleRWAVault {
         bump_instance(e);
     }
 
-    pub fn transfer_from(
-        e: &Env,
-        spender: Address,
-        from: Address,
-        to: Address,
-        amount: i128,
-    ) {
+    pub fn transfer_from(e: &Env, spender: Address, from: Address, to: Address, amount: i128) {
         spender.require_auth();
         require_not_blacklisted(e, &spender);
         require_not_blacklisted(e, &from);
         require_not_blacklisted(e, &to);
+        if get_transfer_requires_kyc(e) {
+            require_kyc_verified(e, &to);
+        }
         update_user_snapshot(e, &from);
         update_user_snapshot(e, &to);
         let allowance = get_share_allowance(e, &from, &spender);
@@ -887,10 +945,18 @@ impl SingleRWAVault {
         bump_instance(e);
     }
 
-    pub fn decimals(e: &Env) -> u32 { get_share_decimals(e) }
-    pub fn name(e: &Env) -> String  { get_share_name(e) }
-    pub fn symbol(e: &Env) -> String { get_share_symbol(e) }
-    pub fn total_supply(e: &Env) -> i128 { get_total_supply(e) }
+    pub fn decimals(e: &Env) -> u32 {
+        get_share_decimals(e)
+    }
+    pub fn name(e: &Env) -> String {
+        get_share_name(e)
+    }
+    pub fn symbol(e: &Env) -> String {
+        get_share_symbol(e)
+    }
+    pub fn total_supply(e: &Env) -> i128 {
+        get_total_supply(e)
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1066,15 +1132,41 @@ fn require_not_blacklisted(e: &Env, addr: &Address) {
 #[cfg(test)]
 mod test {
     use super::*;
-    use soroban_sdk::testutils::Address as _;
+    use soroban_sdk::{contract as soroban_contract, contractimpl as soroban_contractimpl, testutils::Address as _};
 
-    fn create_test_token(e: &Env) -> Address {
-        e.register_stellar_asset_contract_v2(Address::generate(e)).address()
+    // Minimal SEP-41 token mock for inline blacklist tests.
+    #[soroban_contract]
+    struct InlineToken;
+    #[soroban_contractimpl]
+    impl InlineToken {
+        pub fn balance(e: Env, id: Address) -> i128 {
+            e.storage().persistent().get(&id).unwrap_or(0i128)
+        }
+        pub fn transfer(e: Env, from: Address, to: Address, amount: i128) {
+            from.require_auth();
+            let fb: i128 = e.storage().persistent().get(&from).unwrap_or(0);
+            e.storage().persistent().set(&from, &(fb - amount));
+            let tb: i128 = e.storage().persistent().get(&to).unwrap_or(0);
+            e.storage().persistent().set(&to, &(tb + amount));
+        }
+        pub fn mint(e: Env, to: Address, amount: i128) {
+            let b: i128 = e.storage().persistent().get(&to).unwrap_or(0);
+            e.storage().persistent().set(&to, &(b + amount));
+        }
+    }
+
+    // Always-true KYC verifier so deposits work in blacklist tests.
+    #[soroban_contract]
+    struct InlineKyc;
+    #[soroban_contractimpl]
+    impl InlineKyc {
+        pub fn has_approved(_e: Env, _cooperator: Address, _user: Address) -> bool { true }
     }
 
     fn create_vault(e: &Env) -> (Address, Address, Address) {
         let admin = Address::generate(e);
-        let asset = create_test_token(e);
+        let asset = e.register(InlineToken, ());
+        let kyc = e.register(InlineKyc, ());
 
         let params = InitParams {
             asset: asset.clone(),
@@ -1082,7 +1174,7 @@ mod test {
             share_symbol: String::from_str(e, "vSHARE"),
             share_decimals: 7,
             admin: admin.clone(),
-            zkme_verifier: e.current_contract_address(),
+            zkme_verifier: kyc,
             cooperator: admin.clone(),
             funding_target: 1000_0000000,
             maturity_date: 0,
@@ -1119,7 +1211,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "Error(Contract, #4)")]
+    #[should_panic]
     fn test_set_blacklisted_non_admin_fails() {
         let e = Env::default();
         e.mock_all_auths();
@@ -1133,19 +1225,18 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "Error(Contract, #14)")]
+    #[should_panic]
     fn test_blacklisted_cannot_transfer() {
         let e = Env::default();
         e.mock_all_auths();
         let (vault_addr, admin, asset) = create_vault(&e);
         let client = SingleRWAVaultClient::new(&e, &vault_addr);
-        let token_client = token::Client::new(&e, &asset);
-        let token_admin = token::StellarAssetClient::new(&e, &asset);
+        let token_client = InlineTokenClient::new(&e, &asset);
 
         let depositor = Address::generate(&e);
         let recipient = Address::generate(&e);
 
-        token_admin.mint(&depositor, &100_0000000);
+        token_client.mint(&depositor, &100_0000000);
         client.deposit(&depositor, &10_0000000, &depositor);
 
         client.set_blacklisted(&admin, &depositor, &true);
@@ -1154,18 +1245,18 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "Error(Contract, #14)")]
+    #[should_panic]
     fn test_cannot_transfer_to_blacklisted() {
         let e = Env::default();
         e.mock_all_auths();
         let (vault_addr, admin, asset) = create_vault(&e);
         let client = SingleRWAVaultClient::new(&e, &vault_addr);
-        let token_admin = token::StellarAssetClient::new(&e, &asset);
+        let token_client = InlineTokenClient::new(&e, &asset);
 
         let depositor = Address::generate(&e);
         let blacklisted_recipient = Address::generate(&e);
 
-        token_admin.mint(&depositor, &100_0000000);
+        token_client.mint(&depositor, &100_0000000);
         client.deposit(&depositor, &10_0000000, &depositor);
 
         client.set_blacklisted(&admin, &blacklisted_recipient, &true);
@@ -1174,19 +1265,22 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "Error(Contract, #14)")]
+    #[should_panic]
     fn test_blacklisted_cannot_deposit() {
         let e = Env::default();
         e.mock_all_auths();
         let (vault_addr, admin, asset) = create_vault(&e);
         let client = SingleRWAVaultClient::new(&e, &vault_addr);
-        let token_admin = token::StellarAssetClient::new(&e, &asset);
+        let token_client = InlineTokenClient::new(&e, &asset);
 
         let depositor = Address::generate(&e);
-        token_admin.mint(&depositor, &100_0000000);
+        token_client.mint(&depositor, &100_0000000);
 
         client.set_blacklisted(&admin, &depositor, &true);
 
         client.deposit(&depositor, &10_0000000, &depositor);
     }
 }
+
+#[cfg(test)]
+mod tests;

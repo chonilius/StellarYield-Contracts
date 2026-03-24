@@ -20,10 +20,10 @@ use crate::types::{RedemptionRequest, VaultState};
 // TTL constants
 // ─────────────────────────────────────────────────────────────────────────────
 
-pub const INSTANCE_LIFETIME_THRESHOLD: u32 = 518400;   // ~30 days at 5s/ledger
-pub const INSTANCE_BUMP_AMOUNT: u32 = 535000;          // bump target
+pub const INSTANCE_LIFETIME_THRESHOLD: u32 = 518400; // ~30 days at 5s/ledger
+pub const INSTANCE_BUMP_AMOUNT: u32 = 535000; // bump target
 
-pub const BALANCE_LIFETIME_THRESHOLD: u32 = 1036800;   // ~60 days
+pub const BALANCE_LIFETIME_THRESHOLD: u32 = 1036800; // ~60 days
 pub const BALANCE_BUMP_AMOUNT: u32 = 1069000;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -83,7 +83,7 @@ pub enum DataKey {
 
     // --- Share token balances / allowances ---
     Balance(Address),
-    Allowance(Address, Address),   // (owner, spender)
+    Allowance(Address, Address), // (owner, spender)
     TotalSupply,
 
     // --- User deposit tracking ---
@@ -95,6 +95,9 @@ pub enum DataKey {
 
     // --- Blacklist ---
     Blacklisted(Address),
+
+    // --- Transfer KYC gate ---
+    TransferRequiresKyc,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,10 +140,10 @@ macro_rules! instance_put {
 }
 
 // Share token metadata
-instance_get!(get_share_name,    ShareName,    String);
-instance_put!(put_share_name,    ShareName,    String);
-instance_get!(get_share_symbol,  ShareSymbol,  String);
-instance_put!(put_share_symbol,  ShareSymbol,  String);
+instance_get!(get_share_name, ShareName, String);
+instance_put!(put_share_name, ShareName, String);
+instance_get!(get_share_symbol, ShareSymbol, String);
+instance_put!(put_share_symbol, ShareSymbol, String);
 instance_get!(get_share_decimals, ShareDecimals, u32);
 instance_put!(put_share_decimals, ShareDecimals, u32);
 
@@ -159,28 +162,28 @@ instance_get!(get_cooperator, Cooperator, Address);
 instance_put!(put_cooperator, Cooperator, Address);
 
 // RWA
-instance_get!(get_rwa_name,         RwaName,         String);
-instance_put!(put_rwa_name,         RwaName,         String);
-instance_get!(get_rwa_symbol,       RwaSymbol,       String);
-instance_put!(put_rwa_symbol,       RwaSymbol,       String);
-instance_get!(get_rwa_document_uri, RwaDocumentUri,  String);
-instance_put!(put_rwa_document_uri, RwaDocumentUri,  String);
-instance_get!(get_rwa_category,     RwaCategory,     String);
-instance_put!(put_rwa_category,     RwaCategory,     String);
-instance_get!(get_expected_apy,     ExpectedApy,     u32);
-instance_put!(put_expected_apy,     ExpectedApy,     u32);
+instance_get!(get_rwa_name, RwaName, String);
+instance_put!(put_rwa_name, RwaName, String);
+instance_get!(get_rwa_symbol, RwaSymbol, String);
+instance_put!(put_rwa_symbol, RwaSymbol, String);
+instance_get!(get_rwa_document_uri, RwaDocumentUri, String);
+instance_put!(put_rwa_document_uri, RwaDocumentUri, String);
+instance_get!(get_rwa_category, RwaCategory, String);
+instance_put!(put_rwa_category, RwaCategory, String);
+instance_get!(get_expected_apy, ExpectedApy, u32);
+instance_put!(put_expected_apy, ExpectedApy, u32);
 
 // Config
-instance_get!(get_funding_target,           FundingTarget,           i128);
-instance_put!(put_funding_target,           FundingTarget,           i128);
-instance_get!(get_maturity_date,            MaturityDate,            u64);
-instance_put!(put_maturity_date,            MaturityDate,            u64);
-instance_get!(get_min_deposit,              MinDeposit,              i128);
-instance_put!(put_min_deposit,              MinDeposit,              i128);
-instance_get!(get_max_deposit_per_user,     MaxDepositPerUser,       i128);
-instance_put!(put_max_deposit_per_user,     MaxDepositPerUser,       i128);
-instance_get!(get_early_redemption_fee_bps, EarlyRedemptionFeeBps,   u32);
-instance_put!(put_early_redemption_fee_bps, EarlyRedemptionFeeBps,   u32);
+instance_get!(get_funding_target, FundingTarget, i128);
+instance_put!(put_funding_target, FundingTarget, i128);
+instance_get!(get_maturity_date, MaturityDate, u64);
+instance_put!(put_maturity_date, MaturityDate, u64);
+instance_get!(get_min_deposit, MinDeposit, i128);
+instance_put!(put_min_deposit, MinDeposit, i128);
+instance_get!(get_max_deposit_per_user, MaxDepositPerUser, i128);
+instance_put!(put_max_deposit_per_user, MaxDepositPerUser, i128);
+instance_get!(get_early_redemption_fee_bps, EarlyRedemptionFeeBps, u32);
+instance_put!(put_early_redemption_fee_bps, EarlyRedemptionFeeBps, u32);
 
 // State
 instance_get!(get_vault_state, VaultState, VaultState);
@@ -203,10 +206,10 @@ pub fn put_activation_timestamp(e: &Env, val: u64) {
 }
 
 // Epoch / yield (global)
-instance_get!(get_current_epoch,           CurrentEpoch,           u32);
-instance_put!(put_current_epoch,           CurrentEpoch,           u32);
-instance_get!(get_total_yield_distributed, TotalYieldDistributed,  i128);
-instance_put!(put_total_yield_distributed, TotalYieldDistributed,  i128);
+instance_get!(get_current_epoch, CurrentEpoch, u32);
+instance_put!(put_current_epoch, CurrentEpoch, u32);
+instance_get!(get_total_yield_distributed, TotalYieldDistributed, i128);
+instance_put!(put_total_yield_distributed, TotalYieldDistributed, i128);
 
 // TotalSupply
 instance_get!(get_total_supply, TotalSupply, i128);
@@ -228,9 +231,7 @@ pub fn get_operator(e: &Env, addr: &Address) -> bool {
 }
 
 pub fn put_operator(e: &Env, addr: Address, val: bool) {
-    e.storage()
-        .instance()
-        .set(&DataKey::Operator(addr), &val);
+    e.storage().instance().set(&DataKey::Operator(addr), &val);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -315,13 +316,11 @@ pub fn put_user_deposited(e: &Env, addr: &Address, val: i128) {
     e.storage()
         .persistent()
         .set(&DataKey::UserDeposited(addr.clone()), &val);
-    e.storage()
-        .persistent()
-        .extend_ttl(
-            &DataKey::UserDeposited(addr.clone()),
-            BALANCE_LIFETIME_THRESHOLD,
-            BALANCE_BUMP_AMOUNT,
-        );
+    e.storage().persistent().extend_ttl(
+        &DataKey::UserDeposited(addr.clone()),
+        BALANCE_LIFETIME_THRESHOLD,
+        BALANCE_BUMP_AMOUNT,
+    );
 }
 
 pub fn get_total_yield_claimed(e: &Env, addr: &Address) -> i128 {
@@ -398,13 +397,31 @@ pub fn put_redemption_request(e: &Env, id: u32, req: RedemptionRequest) {
     e.storage()
         .persistent()
         .set(&DataKey::RedemptionRequest(id), &req);
+    e.storage().persistent().extend_ttl(
+        &DataKey::RedemptionRequest(id),
+        BALANCE_LIFETIME_THRESHOLD,
+        BALANCE_BUMP_AMOUNT,
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Transfer KYC gate (instance storage)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Returns whether share transfers require the recipient to be KYC-verified.
+/// Defaults to `true` so that existing deployments without the key set are
+/// safe-by-default (KYC required).
+pub fn get_transfer_requires_kyc(e: &Env) -> bool {
     e.storage()
-        .persistent()
-        .extend_ttl(
-            &DataKey::RedemptionRequest(id),
-            BALANCE_LIFETIME_THRESHOLD,
-            BALANCE_BUMP_AMOUNT,
-        );
+        .instance()
+        .get(&DataKey::TransferRequiresKyc)
+        .unwrap_or(true)
+}
+
+pub fn put_transfer_requires_kyc(e: &Env, val: bool) {
+    e.storage()
+        .instance()
+        .set(&DataKey::TransferRequiresKyc, &val);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
