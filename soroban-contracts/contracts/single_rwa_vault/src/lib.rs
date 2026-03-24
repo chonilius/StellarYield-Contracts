@@ -6,9 +6,6 @@ mod storage;
 mod token_interface;
 mod types;
 
-#[cfg(test)]
-mod test_token;
-
 pub use crate::types::*;
 
 use soroban_sdk::{contract, contractimpl, panic_with_error, token, Address, Env, String};
@@ -1140,6 +1137,21 @@ fn require_not_blacklisted(e: &Env, addr: &Address) {
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Reentrancy guard helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn acquire_lock(e: &Env) {
+    if get_locked(e) {
+        panic_with_error!(e, Error::Reentrant);
+    }
+    put_locked(e, true);
+}
+
+fn release_lock(e: &Env) {
+    put_locked(e, false);
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1295,3 +1307,7 @@ mod test {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub mod test_helpers;
+#[cfg(test)]
+mod test_constructor;

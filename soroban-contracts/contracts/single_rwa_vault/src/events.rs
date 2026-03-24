@@ -6,6 +6,13 @@ use soroban_sdk::{symbol_short, Address, Env, String};
 
 use crate::types::VaultState;
 
+pub fn emit_address_blacklisted(e: &Env, address: Address, status: bool) {
+    e.events().publish(
+        (symbol_short!("blacklist"),),
+        (address, status),
+    );
+}
+
 pub fn emit_zkme_verifier_updated(e: &Env, old: Address, new: Address) {
     e.events().publish(
         (symbol_short!("zkme_upd"),),

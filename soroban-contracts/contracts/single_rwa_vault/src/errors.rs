@@ -19,4 +19,6 @@ pub enum Error {
     ZeroAddress             = 12,
     ZeroAmount              = 13,
     AddressBlacklisted      = 14,
+    /// Reentrancy detected — a guarded function was called while already executing.
+    Reentrant               = 15,
 }
