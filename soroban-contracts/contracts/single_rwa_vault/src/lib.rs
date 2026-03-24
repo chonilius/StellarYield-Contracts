@@ -1042,6 +1042,13 @@ impl SingleRWAVault {
 
     pub fn approve(e: &Env, from: Address, spender: Address, amount: i128, expiration_ledger: u32) {
         from.require_auth();
+        // SEP-41 §3.4: expiration_ledger must be ≥ current ledger sequence.
+        // Allowing a zero amount with a past expiry is the canonical way to
+        // revoke an allowance, so we only reject future-expiry cases where
+        // amount > 0 and the ledger has already passed.
+        if amount > 0 && expiration_ledger < e.ledger().sequence() {
+            panic_with_error!(e, Error::InvalidVaultState);
+        }
         put_share_allowance_with_expiry(e, &from, &spender, amount, expiration_ledger);
         emit_approval(e, from, spender, amount, expiration_ledger);
         bump_instance(e);
@@ -1482,3 +1489,5 @@ mod test_redemption;
 
 #[cfg(test)]
 mod test_vault_state_guards;
+#[cfg(test)]
+mod test_token;
