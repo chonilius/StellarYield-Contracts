@@ -315,6 +315,19 @@ pub fn put_epoch_total_shares(e: &Env, epoch: u32, val: i128) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Allowance data type
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Persistent allowance record that couples the approved amount with its
+/// expiration ledger, enabling on-chain expiry enforcement (SEP-41 §3.4).
+#[contracttype]
+#[derive(Clone)]
+pub struct AllowanceData {
+    pub amount: i128,
+    pub expiration_ledger: u32,
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Per-user persistent data
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -330,32 +343,74 @@ pub fn put_share_balance(e: &Env, addr: &Address, val: i128) {
         .set(&DataKey::Balance(addr.clone()), &val);
 }
 
-/// Allowance stored in persistent storage.
-/// A simple version without expiry tracking (expiry is tracked at application
-/// layer via `expiration_ledger` parameter in `approve`).
+/// Returns the current allowance for `(owner, spender)`.
+/// Returns 0 if no allowance is recorded **or** if it has expired
+/// (`expiration_ledger < current ledger sequence`).
 pub fn get_share_allowance(e: &Env, owner: &Address, spender: &Address) -> i128 {
+    let key = DataKey::Allowance(owner.clone(), spender.clone());
+    match e
+        .storage()
+        .persistent()
+        .get::<_, AllowanceData>(&key)
+    {
+        Some(data) => {
+            if e.ledger().sequence() > data.expiration_ledger {
+                0 // allowance has expired
+            } else {
+                data.amount
+            }
+        }
+        None => 0,
+    }
+}
+
+/// Decrements an existing allowance to `new_amount`, preserving the stored
+/// `expiration_ledger`.  Only call this after confirming the allowance is
+/// sufficient and non-expired via `get_share_allowance`.
+pub fn put_share_allowance(e: &Env, owner: &Address, spender: &Address, new_amount: i128) {
+    let key = DataKey::Allowance(owner.clone(), spender.clone());
+    // Read back the expiration that was set when the allowance was approved.
+    let expiration_ledger = e
+        .storage()
+        .persistent()
+        .get::<_, AllowanceData>(&key)
+        .map(|d| d.expiration_ledger)
+        .unwrap_or(0);
     e.storage()
         .persistent()
-        .get(&DataKey::Allowance(owner.clone(), spender.clone()))
-        .unwrap_or(0)
+        .set(&key, &AllowanceData { amount: new_amount, expiration_ledger });
+    // Keep the entry alive until it naturally expires.
+    let current = e.ledger().sequence();
+    if expiration_ledger > current {
+        let live_for = expiration_ledger - current + 1;
+        e.storage()
+            .persistent()
+            .extend_ttl(&key, live_for, live_for);
+    }
 }
-pub fn put_share_allowance(e: &Env, owner: &Address, spender: &Address, val: i128) {
-    e.storage()
-        .persistent()
-        .set(&DataKey::Allowance(owner.clone(), spender.clone()), &val);
-}
+
+/// Stores a fresh allowance with an on-chain `expiration_ledger` and sets the
+/// persistent entry TTL to match, enabling automatic ledger-level cleanup.
 pub fn put_share_allowance_with_expiry(
     e: &Env,
     owner: &Address,
     spender: &Address,
-    val: i128,
-    _expiration_ledger: u32,
+    amount: i128,
+    expiration_ledger: u32,
 ) {
-    // Store the amount; expiration logic can be enforced off-chain or via
-    // additional TTL machinery if needed.  For parity with the Solidity
-    // version (which has no on-chain allowance expiry either) we store
-    // only the amount.
-    put_share_allowance(e, owner, spender, val);
+    let key = DataKey::Allowance(owner.clone(), spender.clone());
+    e.storage()
+        .persistent()
+        .set(&key, &AllowanceData { amount, expiration_ledger });
+    // Align the persistent TTL with the expiration so Soroban's archival
+    // mechanism cleans up the entry automatically once it expires.
+    let current = e.ledger().sequence();
+    if expiration_ledger >= current {
+        let live_for = expiration_ledger - current + 1;
+        e.storage()
+            .persistent()
+            .extend_ttl(&key, live_for, live_for);
+    }
 }
 
 pub fn get_user_deposited(e: &Env, addr: &Address) -> i128 {

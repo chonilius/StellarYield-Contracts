@@ -1,7 +1,7 @@
 extern crate std;
 
 use soroban_sdk::{
-    testutils::Address as _,
+    testutils::{Address as _, Ledger},
     token::StellarAssetClient,
     Address, Env, String,
 };
@@ -28,6 +28,7 @@ fn default_params(env: &Env, admin: &Address, asset: &Address) -> InitParams {
         min_deposit: 1_000_i128,
         max_deposit_per_user: 0_i128,
         early_redemption_fee_bps: 100_u32,
+        funding_deadline: 0_u64,
         rwa_name: String::from_str(env, "Test RWA"),
         rwa_symbol: String::from_str(env, "TRWA"),
         rwa_document_uri: String::from_str(env, "https://test.com"),
@@ -290,4 +291,49 @@ fn test_burn_insufficient_balance_panics() {
 
     give_shares(&env, &vault_id, &alice, 100_i128);
     client.burn(&alice, &200_i128); // more than alice holds
+}
+
+// ─── Allowance expiration ──────────────────────────────────────────────────────
+
+/// allowance() returns 0 once the ledger sequence advances past expiration_ledger.
+#[test]
+fn test_allowance_returns_zero_after_expiration() {
+    let (env, vault_id, _, _) = setup();
+    let client = SingleRWAVaultClient::new(&env, &vault_id);
+    let alice = Address::generate(&env);
+    let spender = Address::generate(&env);
+
+    // Approve with an expiry 10 ledgers from now.
+    let current = env.ledger().sequence();
+    let expiry = current + 10;
+    client.approve(&alice, &spender, &500_i128, &expiry);
+    assert_eq!(client.allowance(&alice, &spender), 500_i128);
+
+    // Advance the ledger past the expiration.
+    env.ledger().set_sequence_number(expiry + 1);
+    assert_eq!(client.allowance(&alice, &spender), 0_i128);
+}
+
+/// transfer_from panics when the allowance has expired, even if the raw
+/// storage amount is non-zero.
+#[test]
+#[should_panic]
+fn test_transfer_from_expired_allowance_panics() {
+    let (env, vault_id, _, _) = setup();
+    let client = SingleRWAVaultClient::new(&env, &vault_id);
+    let alice = Address::generate(&env);
+    let bob = Address::generate(&env);
+    let spender = Address::generate(&env);
+
+    give_shares(&env, &vault_id, &alice, 1_000_i128);
+
+    // Approve with an expiry 5 ledgers from now.
+    let expiry = env.ledger().sequence() + 5;
+    client.approve(&alice, &spender, &600_i128, &expiry);
+
+    // Advance the ledger past the expiration — allowance is effectively 0.
+    env.ledger().set_sequence_number(expiry + 1);
+
+    // This must panic because get_share_allowance returns 0 for expired allowances.
+    client.transfer_from(&spender, &alice, &bob, &100_i128);
 }
