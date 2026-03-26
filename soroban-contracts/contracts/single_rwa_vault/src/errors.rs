@@ -45,8 +45,8 @@ pub enum Error {
     InvalidInitParams = 26,
     /// Vault cannot be closed because it still contains shares/assets.
     VaultNotEmpty = 27,
-    /// `preview_deposit` / deposit: positive assets rounded down to zero shares (ERC-4626 dust guard).
-    PreviewZeroShares = 28,
-    /// `preview_redeem` / redeem: positive shares rounded down to zero assets (ERC-4626 dust guard).
-    PreviewZeroAssets = 29,
+    /// Vault is not in Emergency state.
+    NotInEmergency = 28,
+    /// User has already claimed their emergency distribution.
+    AlreadyClaimedEmergency = 29,
 }
