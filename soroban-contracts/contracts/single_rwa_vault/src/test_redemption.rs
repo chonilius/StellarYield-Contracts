@@ -699,3 +699,75 @@ fn test_redeem_blacklisted_address_panics() {
     // Try to redeem — should panic with AddressBlacklisted
     vault.redeem(&user, &shares, &user, &user);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Tests — #210: Multi-epoch aggregated claim
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Distribute yield across several epochs and verify that a single claim_yield
+/// call returns the sum of all per-epoch yields.
+#[test]
+fn test_claim_yield_multiple_epochs_aggregated() {
+    let ctx = setup();
+    let v = ctx.vault();
+
+    let deposit_amount = 10_000_000i128; // 10 USDC
+
+    // KYC-approve and deposit for user.
+    crate::test_helpers::MockZkmeClient::new(&ctx.env, &ctx.kyc_id).approve_user(&ctx.user);
+    mint_usdc(&ctx.env, &ctx.asset_id, &ctx.user, deposit_amount);
+    v.deposit(&ctx.user, &deposit_amount, &ctx.user);
+
+    // Second depositor keeps the vault funded so yield math remains non-trivial.
+    let other = Address::generate(&ctx.env);
+    crate::test_helpers::MockZkmeClient::new(&ctx.env, &ctx.kyc_id).approve_user(&other);
+    mint_usdc(&ctx.env, &ctx.asset_id, &other, deposit_amount);
+    v.deposit(&other, &deposit_amount, &other);
+
+    // Activate vault.
+    v.set_funding_target(&ctx.admin, &0i128);
+    v.activate_vault(&ctx.operator);
+
+    // Distribute yield across five epochs.
+    let yield_amounts = [10_000i128, 20_000i128, 15_000i128, 25_000i128, 30_000i128];
+    let mut total_yield_distributed = 0i128;
+    for amount in yield_amounts.iter() {
+        mint_usdc(&ctx.env, &ctx.asset_id, &ctx.operator, *amount);
+        v.distribute_yield(&ctx.operator, amount);
+        total_yield_distributed += *amount;
+    }
+
+    // User holds 50% of total shares → entitled to 50% of total yield.
+    let expected_user_yield = total_yield_distributed / 2;
+
+    // Verify pending_yield matches the expected aggregated amount.
+    let pending = v.pending_yield(&ctx.user);
+    assert_eq!(
+        pending, expected_user_yield,
+        "pending_yield must equal sum of per-epoch yields for user"
+    );
+
+    // Claim all yield in a single call.
+    let claimed = v.claim_yield(&ctx.user);
+    assert_eq!(
+        claimed, expected_user_yield,
+        "claimed amount must match expected aggregated yield"
+    );
+
+    // After claiming, pending yield must be zero.
+    assert_eq!(
+        v.pending_yield(&ctx.user),
+        0,
+        "pending yield must be zero after claim"
+    );
+
+    // Each individual epoch should report 0 yield remaining.
+    for epoch in 1..=5 {
+        assert_eq!(
+            v.pending_yield_for_epoch(&ctx.user, &epoch),
+            0,
+            "epoch {} yield must be zero after claim",
+            epoch
+        );
+    }
+}
