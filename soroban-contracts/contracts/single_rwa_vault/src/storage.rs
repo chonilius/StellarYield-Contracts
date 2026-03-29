@@ -64,6 +64,8 @@ pub enum Key {
     MinDep,
     MaxDepUsr,
     ERedFee,
+    /// Yield vesting period in seconds (0 = instant claiming for backward compatibility)
+    YldVstPer,
 
     // --- Vault state ---
     VaultSt,
@@ -90,6 +92,8 @@ pub enum Key {
     /// Cursor: the highest epoch at which all epochs ≤ cursor have been claimed.
     /// Allows pending_yield / claim_yield to scan only new epochs.
     LstClmEp(Address),
+    /// Track how much yield a user has claimed for a specific epoch (for vesting)
+    UsrEpYldClm(Address, u32),
 
     // --- User share snapshots ---
     UsrShrEp(Address, u32),
@@ -186,6 +190,8 @@ impl soroban_sdk::IntoVal<Env, soroban_sdk::Val> for Key {
             Key::TlkDelay => 50,
             Key::TlkCount => 51,
             Key::TlkAct(n) => 52 + *n,
+            Key::YldVstPer => 100, // Unique ID for yield vesting period
+            Key::UsrEpYldClm(_, _) => 101, // Unique ID for user epoch yield claimed
         };
         n.into_val(env)
     }
@@ -232,6 +238,7 @@ impl soroban_sdk::TryFromVal<Env, soroban_sdk::Val> for Key {
             49 => Ok(Key::EmgTotSup),
             50 => Ok(Key::TlkDelay),
             51 => Ok(Key::TlkCount),
+            100 => Ok(Key::YldVstPer),
             _ => Err(soroban_sdk::Error::from_contract_error(1)),
         }
     }
@@ -318,6 +325,7 @@ pub fn bump_user_data(e: &Env, addr: &Address, epoch: u32) {
         Key::TotYldClm(addr.clone()),
         Key::LstIntEp(addr.clone()),
         Key::LstClmEp(addr.clone()),
+        Key::UsrEpYldClm(addr.clone(), epoch), // Include the specific epoch key
     ];
     for key in &addr_keys {
         if e.storage().persistent().has(key) {
@@ -391,10 +399,7 @@ instance_get!(get_maturity_date, MatDate, u64);
 instance_put!(put_maturity_date, MatDate, u64);
 
 pub fn get_funding_deadline(e: &Env) -> u64 {
-    e.storage()
-        .instance()
-        .get(&Key::FundDeadl)
-        .unwrap_or(0)
+    e.storage().instance().get(&Key::FundDeadl).unwrap_or(0)
 }
 pub fn put_funding_deadline(e: &Env, val: u64) {
     e.storage().instance().set(&Key::FundDeadl, &val);
@@ -407,6 +412,16 @@ instance_put!(put_max_deposit_per_user, MaxDepUsr, i128);
 instance_get!(get_early_redemption_fee_bps, ERedFee, u32);
 instance_put!(put_early_redemption_fee_bps, ERedFee, u32);
 
+pub fn get_yield_vesting_period(e: &Env) -> u64 {
+    e.storage()
+        .instance()
+        .get(&Key::YldVstPer)
+        .unwrap_or(0) // Default to 0 for backward compatibility (instant claiming)
+}
+pub fn put_yield_vesting_period(e: &Env, val: u64) {
+    e.storage().instance().set(&Key::YldVstPer, &val);
+}
+
 // State
 instance_get!(get_vault_state, VaultSt, VaultState);
 instance_put!(put_vault_state, VaultSt, VaultState);
@@ -418,15 +433,10 @@ instance_get!(get_locked, Locked, bool);
 instance_put!(put_locked, Locked, bool);
 
 pub fn get_activation_timestamp(e: &Env) -> u64 {
-    e.storage()
-        .instance()
-        .get(&Key::ActTimest)
-        .unwrap_or(0)
+    e.storage().instance().get(&Key::ActTimest).unwrap_or(0)
 }
 pub fn put_activation_timestamp(e: &Env, val: u64) {
-    e.storage()
-        .instance()
-        .set(&Key::ActTimest, &val);
+    e.storage().instance().set(&Key::ActTimest, &val);
 }
 
 // Epoch / yield (global)
@@ -472,9 +482,7 @@ pub fn get_role(e: &Env, addr: &Address, role: Role) -> bool {
 /// Grant (`val = true`) or revoke (`val = false`) `role` for `addr`.
 pub fn put_role(e: &Env, addr: Address, role: Role, val: bool) {
     if val {
-        e.storage()
-            .instance()
-            .set(&Key::Role(addr, role), &true);
+        e.storage().instance().set(&Key::Role(addr, role), &true);
     } else {
         e.storage().instance().remove(&Key::Role(addr, role));
     }
@@ -507,9 +515,7 @@ pub fn get_epoch_yield(e: &Env, epoch: u32) -> i128 {
         .unwrap_or(0)
 }
 pub fn put_epoch_yield(e: &Env, epoch: u32, val: i128) {
-    e.storage()
-        .instance()
-        .set(&Key::EpYield(epoch), &val);
+    e.storage().instance().set(&Key::EpYield(epoch), &val);
 }
 
 pub fn get_epoch_total_shares(e: &Env, epoch: u32) -> i128 {
@@ -519,9 +525,7 @@ pub fn get_epoch_total_shares(e: &Env, epoch: u32) -> i128 {
         .unwrap_or(0)
 }
 pub fn put_epoch_total_shares(e: &Env, epoch: u32, val: i128) {
-    e.storage()
-        .instance()
-        .set(&Key::EpTotShr(epoch), &val);
+    e.storage().instance().set(&Key::EpTotShr(epoch), &val);
 }
 
 pub fn get_epoch_timestamp(e: &Env, epoch: u32) -> u64 {
@@ -531,9 +535,7 @@ pub fn get_epoch_timestamp(e: &Env, epoch: u32) -> u64 {
         .unwrap_or(0)
 }
 pub fn put_epoch_timestamp(e: &Env, epoch: u32, val: u64) {
-    e.storage()
-        .instance()
-        .set(&Key::EpTimest(epoch), &val);
+    e.storage().instance().set(&Key::EpTimest(epoch), &val);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -568,7 +570,7 @@ pub fn put_share_balance(e: &Env, addr: &Address, val: i128) {
 /// Returns the current allowance for `(owner, spender)`.
 /// Returns 0 if no allowance is recorded **or** if it has expired
 /// (`expiration_ledger < current ledger sequence`).
-/// 
+///
 /// # TTL Management
 /// This function implements bump-on-read behavior: if an allowance entry exists
 /// (regardless of expiration), its TTL is extended to prevent silent archival.
@@ -580,7 +582,7 @@ pub fn get_share_allowance(e: &Env, owner: &Address, spender: &Address) -> i128 
         Some(data) => {
             // Bump TTL on read to prevent silent archival of active allowances
             bump_allowance(e, owner, spender);
-            
+
             if e.ledger().sequence() > data.expiration_ledger {
                 0 // allowance has expired
             } else {
@@ -594,7 +596,7 @@ pub fn get_share_allowance(e: &Env, owner: &Address, spender: &Address) -> i128 
 /// Decrements an existing allowance to `new_amount`, preserving the stored
 /// `expiration_ledger`.  Only call this after confirming the allowance is
 /// sufficient and non-expired via `get_share_allowance`.
-/// 
+///
 /// # TTL Management
 /// Uses standard BALANCE_LIFETIME_THRESHOLD/BALANCE_BUMP_AMOUNT to prevent
 /// silent archival, consistent with other persistent user data.
@@ -620,7 +622,7 @@ pub fn put_share_allowance(e: &Env, owner: &Address, spender: &Address, new_amou
 
 /// Stores a fresh allowance with an on-chain `expiration_ledger` and sets the
 /// persistent entry TTL to match, enabling automatic ledger-level cleanup.
-/// 
+///
 /// # TTL Management
 /// Uses standard BALANCE_LIFETIME_THRESHOLD/BALANCE_BUMP_AMOUNT to prevent
 /// silent archival, while still respecting the expiration_ledger for business logic.
@@ -668,6 +670,20 @@ pub fn get_total_yield_claimed(e: &Env, addr: &Address) -> i128 {
 }
 pub fn put_total_yield_claimed(e: &Env, addr: &Address, val: i128) {
     let key = Key::TotYldClm(addr.clone());
+    e.storage().persistent().set(&key, &val);
+    e.storage()
+        .persistent()
+        .extend_ttl(&key, BALANCE_LIFETIME_THRESHOLD, BALANCE_BUMP_AMOUNT);
+}
+
+pub fn get_user_epoch_yield_claimed(e: &Env, addr: &Address, epoch: u32) -> i128 {
+    e.storage()
+        .persistent()
+        .get(&Key::UsrEpYldClm(addr.clone(), epoch))
+        .unwrap_or(0)
+}
+pub fn put_user_epoch_yield_claimed(e: &Env, addr: &Address, epoch: u32, val: i128) {
+    let key = Key::UsrEpYldClm(addr.clone(), epoch);
     e.storage().persistent().set(&key, &val);
     e.storage()
         .persistent()
@@ -755,9 +771,7 @@ pub fn get_redemption_request(e: &Env, id: u32) -> RedemptionRequest {
         .unwrap_or_else(|| panic_with_error!(e, Error::InvalidRedemptionRequest))
 }
 pub fn put_redemption_request(e: &Env, id: u32, req: RedemptionRequest) {
-    e.storage()
-        .persistent()
-        .set(&Key::RedReq(id), &req);
+    e.storage().persistent().set(&Key::RedReq(id), &req);
     e.storage().persistent().extend_ttl(
         &Key::RedReq(id),
         BALANCE_LIFETIME_THRESHOLD,
@@ -788,16 +802,11 @@ pub fn put_escrowed_shares(e: &Env, addr: &Address, amount: i128) {
 /// Defaults to `true` so that existing deployments without the key set are
 /// safe-by-default (KYC required).
 pub fn get_transfer_requires_kyc(e: &Env) -> bool {
-    e.storage()
-        .instance()
-        .get(&Key::XferKyc)
-        .unwrap_or(true)
+    e.storage().instance().get(&Key::XferKyc).unwrap_or(true)
 }
 
 pub fn put_transfer_requires_kyc(e: &Env, val: bool) {
-    e.storage()
-        .instance()
-        .set(&Key::XferKyc, &val);
+    e.storage().instance().set(&Key::XferKyc, &val);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -827,10 +836,7 @@ pub fn put_blacklisted(e: &Env, addr: &Address, status: bool) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub fn get_emergency_balance(e: &Env) -> i128 {
-    e.storage()
-        .instance()
-        .get(&Key::EmgBal)
-        .unwrap_or(0)
+    e.storage().instance().get(&Key::EmgBal).unwrap_or(0)
 }
 
 pub fn put_emergency_balance(e: &Env, val: i128) {
@@ -838,16 +844,11 @@ pub fn put_emergency_balance(e: &Env, val: i128) {
 }
 
 pub fn get_emergency_total_supply_snapshot(e: &Env) -> i128 {
-    e.storage()
-        .instance()
-        .get(&Key::EmgTotSup)
-        .unwrap_or(0)
+    e.storage().instance().get(&Key::EmgTotSup).unwrap_or(0)
 }
 
 pub fn put_emergency_total_supply_snapshot(e: &Env, val: i128) {
-    e.storage()
-        .instance()
-        .set(&Key::EmgTotSup, &val);
+    e.storage().instance().set(&Key::EmgTotSup, &val);
 }
 
 pub fn get_has_claimed_emergency(e: &Env, addr: &Address) -> bool {
@@ -868,10 +869,7 @@ pub fn put_has_claimed_emergency(e: &Env, addr: &Address) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 pub fn get_timelock_delay(e: &Env) -> u64 {
-    e.storage()
-        .instance()
-        .get(&Key::TlkDelay)
-        .unwrap_or(172800) // Default: 48 hours
+    e.storage().instance().get(&Key::TlkDelay).unwrap_or(172800) // Default: 48 hours
 }
 
 pub fn put_timelock_delay(e: &Env, delay: u64) {
@@ -879,10 +877,7 @@ pub fn put_timelock_delay(e: &Env, delay: u64) {
 }
 
 pub fn get_timelock_counter(e: &Env) -> u32 {
-    e.storage()
-        .instance()
-        .get(&Key::TlkCount)
-        .unwrap_or(0)
+    e.storage().instance().get(&Key::TlkCount).unwrap_or(0)
 }
 
 pub fn put_timelock_counter(e: &Env, counter: u32) {
@@ -890,21 +885,15 @@ pub fn put_timelock_counter(e: &Env, counter: u32) {
 }
 
 pub fn get_timelock_action(e: &Env, action_id: u32) -> Option<crate::types::TimelockAction> {
-    e.storage()
-        .instance()
-        .get(&Key::TlkAct(action_id))
+    e.storage().instance().get(&Key::TlkAct(action_id))
 }
 
 pub fn put_timelock_action(e: &Env, action_id: u32, action: crate::types::TimelockAction) {
-    e.storage()
-        .instance()
-        .set(&Key::TlkAct(action_id), &action);
+    e.storage().instance().set(&Key::TlkAct(action_id), &action);
 }
 
 pub fn has_timelock_action(e: &Env, action_id: u32) -> bool {
-    e.storage()
-        .instance()
-        .has(&Key::TlkAct(action_id))
+    e.storage().instance().has(&Key::TlkAct(action_id))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

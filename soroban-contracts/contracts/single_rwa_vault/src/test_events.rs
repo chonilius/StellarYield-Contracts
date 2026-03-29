@@ -72,13 +72,25 @@ fn test_deposit_emits_event_with_correct_schema() {
     // ── Topic verification: (symbol, caller, receiver) ────────────────────────
     let topic_caller: soroban_sdk::Address = topics.get_unchecked(1).into_val(&ctx.env);
     let topic_receiver: soroban_sdk::Address = topics.get_unchecked(2).into_val(&ctx.env);
-    assert_eq!(topic_caller, ctx.user, "deposit event: caller topic must match depositor");
-    assert_eq!(topic_receiver, ctx.user, "deposit event: receiver topic must match depositor");
+    assert_eq!(
+        topic_caller, ctx.user,
+        "deposit event: caller topic must match depositor"
+    );
+    assert_eq!(
+        topic_receiver, ctx.user,
+        "deposit event: receiver topic must match depositor"
+    );
 
     // ── Data verification: (assets: i128, shares: i128) ──────────────────────
     let (event_assets, event_shares): (i128, i128) = data.into_val(&ctx.env);
-    assert_eq!(event_assets, deposit_amount, "deposit event: assets data must match deposit amount");
-    assert_eq!(event_shares, shares, "deposit event: shares data must match minted shares");
+    assert_eq!(
+        event_assets, deposit_amount,
+        "deposit event: assets data must match deposit amount"
+    );
+    assert_eq!(
+        event_shares, shares,
+        "deposit event: shares data must match minted shares"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -113,14 +125,29 @@ fn test_withdraw_emits_event_with_correct_schema() {
     let topic_caller: soroban_sdk::Address = topics.get_unchecked(1).into_val(&ctx.env);
     let topic_receiver: soroban_sdk::Address = topics.get_unchecked(2).into_val(&ctx.env);
     let topic_owner: soroban_sdk::Address = topics.get_unchecked(3).into_val(&ctx.env);
-    assert_eq!(topic_caller, ctx.user, "withdraw event: caller topic must match");
-    assert_eq!(topic_receiver, ctx.user, "withdraw event: receiver topic must match");
-    assert_eq!(topic_owner, ctx.user, "withdraw event: owner topic must match");
+    assert_eq!(
+        topic_caller, ctx.user,
+        "withdraw event: caller topic must match"
+    );
+    assert_eq!(
+        topic_receiver, ctx.user,
+        "withdraw event: receiver topic must match"
+    );
+    assert_eq!(
+        topic_owner, ctx.user,
+        "withdraw event: owner topic must match"
+    );
 
     // ── Data verification: (assets: i128, shares: i128) ──────────────────────
     let (event_assets, event_shares): (i128, i128) = data.into_val(&ctx.env);
-    assert_eq!(event_assets, withdraw_amount, "withdraw event: assets data must match withdrawn amount");
-    assert_eq!(event_shares, shares_burned, "withdraw event: shares data must match burned shares");
+    assert_eq!(
+        event_assets, withdraw_amount,
+        "withdraw event: assets data must match withdrawn amount"
+    );
+    assert_eq!(
+        event_shares, shares_burned,
+        "withdraw event: shares data must match burned shares"
+    );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -151,9 +178,15 @@ fn test_distribute_yield_emits_event_with_correct_schema() {
 
     // ── Topic verification: (symbol, epoch: u32) ─────────────────────────────
     let topic_epoch: u32 = topics.get_unchecked(1).into_val(&ctx.env);
-    assert_eq!(topic_epoch, epoch, "yield_distributed event: epoch topic must match returned epoch");
+    assert_eq!(
+        topic_epoch, epoch,
+        "yield_distributed event: epoch topic must match returned epoch"
+    );
 
     // ── Data verification: (amount: i128, timestamp: u64) ────────────────────
     let (event_amount, _event_timestamp): (i128, u64) = data.into_val(&ctx.env);
-    assert_eq!(event_amount, yield_amount, "yield_distributed event: amount data must match distributed yield");
+    assert_eq!(
+        event_amount, yield_amount,
+        "yield_distributed event: amount data must match distributed yield"
+    );
 }

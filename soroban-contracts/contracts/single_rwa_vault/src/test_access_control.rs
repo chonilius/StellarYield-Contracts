@@ -1,6 +1,7 @@
 extern crate std;
 
 use soroban_sdk::{
+    contract, contractimpl,
     testutils::{Address as _, Events as _},
     Address, Env, IntoVal, String,
 };
@@ -11,10 +12,10 @@ use crate::{InitParams, SingleRWAVault, SingleRWAVaultClient};
 // Mock SEP-41 token
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[soroban_sdk::contract]
+#[contract]
 pub struct MockToken;
 
-#[soroban_sdk::contractimpl]
+#[contractimpl]
 impl MockToken {
     pub fn balance(e: Env, id: Address) -> i128 {
         e.storage().persistent().get(&id).unwrap_or(0i128)
@@ -41,10 +42,10 @@ impl MockToken {
 // Mock zkMe verifier
 // ─────────────────────────────────────────────────────────────────────────────
 
-#[soroban_sdk::contract]
+#[contract]
 pub struct MockZkme;
 
-#[soroban_sdk::contractimpl]
+#[contractimpl]
 impl MockZkme {
     pub fn has_approved(e: Env, _cooperator: Address, user: Address) -> bool {
         e.storage().instance().get(&user).unwrap_or(false)
@@ -75,7 +76,7 @@ fn make_vault(env: &Env) -> (Address, Address, Address, Address) {
             admin: admin.clone(),
             zkme_verifier: zkme_id.clone(),
             cooperator: cooperator.clone(),
-            funding_target: 1_000_000i128,
+            funding_target: 10_000_000i128,
             maturity_date: 9_999_999_999u64,
             funding_deadline: 0u64,
             min_deposit: 0i128,
@@ -104,7 +105,7 @@ fn test_set_operator_grants_access() {
     let (vault_id, _, _, admin) = make_vault(&e);
     let vault = SingleRWAVaultClient::new(&e, &vault_id);
     let operator = Address::generate(&e);
-    
+
     // With mock_all_auths, every address passes auth checks
     // So we can't test non-operator status properly
     // Just test that we can set an operator
@@ -253,7 +254,7 @@ fn test_emergency_withdraw_drains_vault() {
     // Add some funds to the vault
     token.mint(&vault_id, &5000);
     assert_eq!(token.balance(&vault_id), 5000);
-    
+
     // Pause vault first to bypass timelock check
     vault.pause(&admin, &String::from_str(&e, "Test"));
 
@@ -276,7 +277,7 @@ fn test_emergency_withdraw_non_admin_panics() {
     // An address with no role — not TreasuryManager, FullOperator, or admin.
     let nobody = Address::generate(&e);
     let recipient = Address::generate(&e);
-    
+
     // No auth mocking - should fail at auth level
     vault.emergency_withdraw(&nobody, &recipient);
 }
@@ -291,7 +292,7 @@ fn test_emergency_withdraw_zero_balance_no_transfer() {
     let recipient = Address::generate(&e);
 
     assert_eq!(token.balance(&vault_id), 0);
-    
+
     // Pause vault first to bypass timelock check
     vault.pause(&admin, &String::from_str(&e, "Test"));
 
@@ -319,4 +320,74 @@ fn test_full_operator_can_clear_blacklist_under_current_design() {
     vault.set_blacklisted(&operator, &user, &false);
 
     assert!(!vault.is_blacklisted(&user));
+}
+
+#[test]
+fn test_multiple_consecutive_pauses_and_unpauses() {
+    let e = Env::default();
+    e.mock_all_auths();
+    let (vault_id, token_id, zkme_id, admin) = make_vault(&e);
+    let vault = SingleRWAVaultClient::new(&e, &vault_id);
+    let token = MockTokenClient::new(&e, &token_id);
+    let zkme = MockZkmeClient::new(&e, &zkme_id);
+    let user = Address::generate(&e);
+
+    // Grant operator to admin
+    vault.set_operator(&admin, &admin, &true);
+
+    // Approve user for KYC
+    zkme.approve_user(&user);
+    token.mint(&user, &15_000_000);
+
+    // Initial state: not paused, deposit should work
+    assert!(!vault.paused());
+    vault.deposit(&user, &100_000, &user);
+    assert_eq!(vault.balance(&user), 100_000);
+
+    // Pause #1
+    vault.pause(&admin, &String::from_str(&e, "Pause 1"));
+    assert!(vault.paused());
+
+    // Unpause #1
+    vault.unpause(&admin);
+    assert!(!vault.paused());
+    vault.deposit(&user, &100_000, &user);
+    assert_eq!(vault.balance(&user), 200_000);
+
+    // Pause #2
+    vault.pause(&admin, &String::from_str(&e, "Pause 2"));
+    assert!(vault.paused());
+
+    // Unpause #2
+    vault.unpause(&admin);
+    assert!(!vault.paused());
+    vault.deposit(&user, &100_000, &user);
+    assert_eq!(vault.balance(&user), 300_000);
+
+    // Pause #3
+    vault.pause(&admin, &String::from_str(&e, "Pause 3"));
+    assert!(vault.paused());
+
+    // Unpause #3
+    vault.unpause(&admin);
+    assert!(!vault.paused());
+    vault.deposit(&user, &100_000, &user);
+    assert_eq!(vault.balance(&user), 400_000);
+
+    // Pause #4
+    vault.pause(&admin, &String::from_str(&e, "Pause 4"));
+    assert!(vault.paused());
+
+    // Unpause #4
+    vault.unpause(&admin);
+    assert!(!vault.paused());
+
+    // Final verification: operations still work correctly after multiple pause/unpause cycles
+    vault.deposit(&user, &100_000, &user);
+    assert_eq!(vault.balance(&user), 500_000);
+
+    // Verify state is consistent - vault is still in Funding state
+    assert!(!vault.paused());
+    assert_eq!(vault.balance(&user), 500_000);
+    assert_eq!(token.balance(&user), 14_500_000); // 15_000_000 - 500_000
 }

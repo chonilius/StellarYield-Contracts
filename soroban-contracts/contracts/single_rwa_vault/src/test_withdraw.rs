@@ -132,7 +132,11 @@ fn test_withdraw_via_allowance() {
         remaining_allowance,
         "allowance decremented by shares used"
     );
-    assert_eq!(v.balance(&ctx.user), remaining_balance, "owner still has 7 shares");
+    assert_eq!(
+        v.balance(&ctx.user),
+        remaining_balance,
+        "owner still has 7 shares"
+    );
     assert_eq!(
         ctx.asset().balance(&spender),
         withdraw_amount,
@@ -168,7 +172,11 @@ fn test_redeem_via_allowance() {
         0,
         "allowance fully consumed"
     );
-    assert_eq!(v.balance(&ctx.user), remaining_balance, "owner has 6 shares left");
+    assert_eq!(
+        v.balance(&ctx.user),
+        remaining_balance,
+        "owner has 6 shares left"
+    );
     assert_eq!(ctx.asset().balance(&spender), approved_shares);
 }
 
@@ -283,7 +291,10 @@ fn test_redeem_at_non_unit_share_price() {
 
     // Actually redeem all shares; user should receive 60 USDC.
     let received = v.redeem(&ctx.user, &supply, &ctx.user, &ctx.user);
-    assert_eq!(received, expected_total_assets, "user receives principal + yield");
+    assert_eq!(
+        received, expected_total_assets,
+        "user receives principal + yield"
+    );
     assert_eq!(v.balance(&ctx.user), 0);
     assert_eq!(ctx.asset().balance(&ctx.user), expected_total_assets);
 }

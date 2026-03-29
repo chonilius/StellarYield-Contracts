@@ -6,8 +6,8 @@ use soroban_sdk::{
     Address, Env, String,
 };
 
-use crate::{InitParams, Role, SingleRWAVault, SingleRWAVaultClient};
 use crate::test_helpers::{mint_usdc, setup, setup_with_kyc_bypass};
+use crate::{InitParams, Role, SingleRWAVault, SingleRWAVaultClient};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock SEP-41 token
@@ -596,7 +596,10 @@ fn test_claim_yield_earned_before_early_full_redemption_succeeds() {
 
     // Sanity check: user has pending yield before initiating redemption.
     let pending_before = v.pending_yield(&ctx.user);
-    assert!(pending_before > 0, "user must have pending yield before redemption");
+    assert!(
+        pending_before > 0,
+        "user must have pending yield before redemption"
+    );
 
     // User requests early redemption of ALL shares.
     // `request_early_redemption` calls `update_user_snapshot`, which snapshots
@@ -605,7 +608,11 @@ fn test_claim_yield_earned_before_early_full_redemption_succeeds() {
     let _ = v.request_early_redemption(&ctx.user, &shares);
 
     // Live balance is now zero (shares are moved to escrow).
-    assert_eq!(v.balance(&ctx.user), 0, "live balance must be zero after request");
+    assert_eq!(
+        v.balance(&ctx.user),
+        0,
+        "live balance must be zero after request"
+    );
 
     // Pending yield for epoch 1 must remain accessible: the snapshot taken at
     // request time recorded the user's pre-escrow balance for that epoch.
@@ -618,10 +625,17 @@ fn test_claim_yield_earned_before_early_full_redemption_succeeds() {
     // claim_yield succeeds — the vault still holds the tokens (process_early_redemption
     // has not yet transferred them out).
     let claimed = v.claim_yield(&ctx.user);
-    assert_eq!(claimed, pending_before, "claimed amount must equal pre-redemption pending yield");
+    assert_eq!(
+        claimed, pending_before,
+        "claimed amount must equal pre-redemption pending yield"
+    );
 
     // All yield is now claimed.
-    assert_eq!(v.pending_yield(&ctx.user), 0, "pending yield must be zero after claim");
+    assert_eq!(
+        v.pending_yield(&ctx.user),
+        0,
+        "pending yield must be zero after claim"
+    );
 }
 
 /// If yield is distributed AFTER a user has moved all their shares into escrow
@@ -665,7 +679,11 @@ fn test_claim_yield_distributed_after_early_full_redemption_panics() {
     v.distribute_yield(&ctx.operator, &yield_amount);
 
     // Verify: user has no pending yield for epoch 1.
-    assert_eq!(v.pending_yield(&ctx.user), 0, "user must have no pending yield");
+    assert_eq!(
+        v.pending_yield(&ctx.user),
+        0,
+        "user must have no pending yield"
+    );
 
     // Must panic with NoYieldToClaim (#9).
     v.claim_yield(&ctx.user);

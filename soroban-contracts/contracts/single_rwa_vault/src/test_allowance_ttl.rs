@@ -5,12 +5,12 @@ extern crate std;
 use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{Address, Env};
 
-use crate::test_helpers::{setup, mint_usdc};
+use crate::test_helpers::{mint_usdc, setup};
 
 #[test]
 fn test_allowance_ttl_bumped_on_write() {
     let ctx = setup();
-    
+
     let owner = Address::generate(&ctx.env);
     let spender = Address::generate(&ctx.env);
 
@@ -25,15 +25,18 @@ fn test_allowance_ttl_bumped_on_write() {
     // Set up allowance
     let allowance_amount = 500000_i128; // 0.5 USDC - enough for multiple transfers
     let expiration_ledger = ctx.env.ledger().sequence() + 1000;
-    
-    ctx.vault().approve(&owner, &spender, &allowance_amount, &expiration_ledger);
+
+    ctx.vault()
+        .approve(&owner, &spender, &allowance_amount, &expiration_ledger);
 
     // Verify allowance exists
     assert_eq!(ctx.vault().allowance(&owner, &spender), allowance_amount);
 
     // Simulate TTL passage by advancing many ledgers (but not past expiration)
     for _ in 0..100 {
-        ctx.env.ledger().set_sequence_number(ctx.env.ledger().sequence() + 10);
+        ctx.env
+            .ledger()
+            .set_sequence_number(ctx.env.ledger().sequence() + 10);
         // Check that allowance still persists (TTL bump on read)
         assert_eq!(ctx.vault().allowance(&owner, &spender), allowance_amount);
     }
@@ -41,12 +44,15 @@ fn test_allowance_ttl_bumped_on_write() {
     // Use some allowance to test put_share_allowance TTL bump
     let recipient = Address::generate(&ctx.env);
     crate::test_helpers::MockZkmeClient::new(&ctx.env, &ctx.kyc_id).approve_user(&recipient);
-    ctx.vault().transfer_from(&spender, &owner, &recipient, &10000_i128);
-    
+    ctx.vault()
+        .transfer_from(&spender, &owner, &recipient, &10000_i128);
+
     // Advance more ledgers and verify remaining allowance still persists
     // Note: Allowance may be 0 if fully used, but storage entry should still exist
     for _ in 0..100 {
-        ctx.env.ledger().set_sequence_number(ctx.env.ledger().sequence() + 10);
+        ctx.env
+            .ledger()
+            .set_sequence_number(ctx.env.ledger().sequence() + 10);
         let remaining = ctx.vault().allowance(&owner, &spender);
         assert!(remaining >= 0); // Should not panic, indicating storage exists
     }
@@ -55,7 +61,7 @@ fn test_allowance_ttl_bumped_on_write() {
 #[test]
 fn test_allowance_ttl_bumped_on_read() {
     let ctx = setup();
-    
+
     let owner = Address::generate(&ctx.env);
     let spender = Address::generate(&ctx.env);
 
@@ -70,13 +76,16 @@ fn test_allowance_ttl_bumped_on_read() {
     // Set up allowance
     let allowance_amount = 500000_i128; // 0.5 USDC - enough for multiple transfers
     let expiration_ledger = ctx.env.ledger().sequence() + 1000;
-    
-    ctx.vault().approve(&owner, &spender, &allowance_amount, &expiration_ledger);
+
+    ctx.vault()
+        .approve(&owner, &spender, &allowance_amount, &expiration_ledger);
 
     // Simulate many reads over time without writes
     for i in 0..200 {
-        ctx.env.ledger().set_sequence_number(ctx.env.ledger().sequence() + 5);
-        
+        ctx.env
+            .ledger()
+            .set_sequence_number(ctx.env.ledger().sequence() + 5);
+
         // Each read should bump TTL, preventing archival
         assert_eq!(ctx.vault().allowance(&owner, &spender), allowance_amount);
     }
@@ -85,7 +94,7 @@ fn test_allowance_ttl_bumped_on_read() {
 #[test]
 fn test_expired_allowance_returns_zero_but_still_bumped() {
     let ctx = setup();
-    
+
     let owner = Address::generate(&ctx.env);
     let spender = Address::generate(&ctx.env);
 
@@ -100,8 +109,9 @@ fn test_expired_allowance_returns_zero_but_still_bumped() {
     // Set up allowance with near expiration
     let allowance_amount = 1000_i128;
     let expiration_ledger = ctx.env.ledger().sequence() + 10;
-    
-    ctx.vault().approve(&owner, &spender, &allowance_amount, &expiration_ledger);
+
+    ctx.vault()
+        .approve(&owner, &spender, &allowance_amount, &expiration_ledger);
 
     // Verify allowance exists before expiration
     assert_eq!(ctx.vault().allowance(&owner, &spender), allowance_amount);
@@ -122,7 +132,7 @@ fn test_expired_allowance_returns_zero_but_still_bumped() {
 #[test]
 fn test_allowance_persistence_vs_balance_consistency() {
     let ctx = setup();
-    
+
     let user = Address::generate(&ctx.env);
     let spender = Address::generate(&ctx.env);
 
@@ -137,12 +147,15 @@ fn test_allowance_persistence_vs_balance_consistency() {
     // Set up allowance
     let allowance_amount = 500000_i128; // 0.5 USDC - enough for multiple transfers
     let expiration_ledger = ctx.env.ledger().sequence() + 1000;
-    ctx.vault().approve(&user, &spender, &allowance_amount, &expiration_ledger);
+    ctx.vault()
+        .approve(&user, &spender, &allowance_amount, &expiration_ledger);
 
     // Simulate long period with interactions
     for i in 0..50 {
-        ctx.env.ledger().set_sequence_number(ctx.env.ledger().sequence() + 100);
-        
+        ctx.env
+            .ledger()
+            .set_sequence_number(ctx.env.ledger().sequence() + 100);
+
         // Check that both balance and allowance persist
         // Note: Balance may decrease due to transfers, allowance may decrease due to usage
         assert!(ctx.vault().balance(&user) > 0);
