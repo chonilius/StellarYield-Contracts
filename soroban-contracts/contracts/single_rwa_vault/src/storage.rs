@@ -639,6 +639,9 @@ pub fn put_share_balance(e: &Env, addr: &Address, val: i128) {
 /// return 0 due to storage archival.
 pub fn get_share_allowance(e: &Env, owner: &Address, spender: &Address) -> i128 {
     let key = Key::Allowance(owner.clone(), spender.clone());
+    if !e.storage().persistent().has(&key) {
+        return 0;
+    }
     match e.storage().persistent().get::<_, AllowanceData>(&key) {
         Some(data) => {
             // Bump TTL on read to prevent silent archival of active allowances

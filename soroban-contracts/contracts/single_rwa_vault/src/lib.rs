@@ -1390,6 +1390,9 @@ impl SingleRWAVault {
         // LifecycleManager role required — also passes for FullOperator and admin.
         require_role(e, &operator, Role::LifecycleManager);
 
+        // Guard: Only active vaults can process early redemptions
+        require_state(e, VaultState::Active);
+
         let mut req = get_redemption_request(e, request_id);
         if req.processed {
             panic_with_error!(e, Error::AlreadyProcessed);
@@ -2156,7 +2159,9 @@ impl SingleRWAVault {
     }
 
     pub fn balance(e: &Env, id: Address) -> i128 {
-        get_share_balance(e, &id)
+        let bal = get_share_balance(e, &id);
+        bump_balance(e, &id);
+        bal
     }
 
     pub fn escrowed_balance(e: &Env, id: Address) -> i128 {
