@@ -72,6 +72,52 @@ impl MockUsdc {
     }
 }
 
+mod _fee_on_transfer {
+    use soroban_sdk::{contract, contractimpl, symbol_short, Address, Env};
+
+    #[contract]
+    pub struct FeeOnTransferMock;
+
+    #[contractimpl]
+    impl FeeOnTransferMock {
+        pub fn init(e: Env, fee_bps: u32) {
+            e.storage().instance().set(&symbol_short!("fee"), &fee_bps);
+        }
+
+        pub fn balance(e: Env, id: Address) -> i128 {
+            e.storage().persistent().get(&id).unwrap_or(0i128)
+        }
+
+        pub fn transfer(e: Env, from: Address, to: Address, amount: i128) {
+            from.require_auth();
+            let from_bal: i128 = e.storage().persistent().get(&from).unwrap_or(0);
+            if from_bal < amount {
+                panic!("insufficient token balance");
+            }
+
+            let fee_bps: i128 = i128::from(
+                e.storage()
+                    .instance()
+                    .get(&symbol_short!("fee"))
+                    .unwrap_or(0u32),
+            );
+            let fee = amount * fee_bps / 10_000i128;
+            let received = amount - fee;
+
+            e.storage().persistent().set(&from, &(from_bal - amount));
+
+            let to_bal: i128 = e.storage().persistent().get(&to).unwrap_or(0);
+            e.storage().persistent().set(&to, &(to_bal + received));
+        }
+
+        pub fn mint(e: Env, to: Address, amount: i128) {
+            let bal: i128 = e.storage().persistent().get(&to).unwrap_or(0);
+            e.storage().persistent().set(&to, &(bal + amount));
+        }
+    }
+}
+pub use _fee_on_transfer::{FeeOnTransferMock, FeeOnTransferMockClient};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Mock zkMe verifier
 // Maintains a per-user approval flag settable by test code.
@@ -192,6 +238,37 @@ pub fn setup_with_kyc_bypass() -> TestContext {
     let asset_id = env.register(MockUsdc, ());
     let kyc_id = env.register(AlwaysApproveZkme, ());
 
+    setup_with_registered_contracts(env, asset_id, kyc_id, admin, operator, user, cooperator)
+}
+
+/// Setup that uses a test-only token charging `fee_bps` on every transfer.
+/// Helpful for documenting the vault's current accounting behavior under
+/// fee-on-transfer assets without changing production logic.
+pub fn setup_with_fee_on_transfer_asset(fee_bps: u32) -> TestContext {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let admin = Address::generate(&env);
+    let operator = Address::generate(&env);
+    let user = Address::generate(&env);
+    let cooperator = Address::generate(&env);
+
+    let asset_id = env.register(FeeOnTransferMock, ());
+    FeeOnTransferMockClient::new(&env, &asset_id).init(&fee_bps);
+    let kyc_id = env.register(AlwaysApproveZkme, ());
+
+    setup_with_registered_contracts(env, asset_id, kyc_id, admin, operator, user, cooperator)
+}
+
+fn setup_with_registered_contracts(
+    env: Env,
+    asset_id: Address,
+    kyc_id: Address,
+    admin: Address,
+    operator: Address,
+    user: Address,
+    cooperator: Address,
+) -> TestContext {
     let params = default_params(
         &env,
         asset_id.clone(),

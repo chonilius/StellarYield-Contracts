@@ -37,6 +37,8 @@ mod test_escrow;
 #[cfg(test)]
 mod test_events;
 #[cfg(test)]
+mod test_fee_on_transfer;
+#[cfg(test)]
 mod test_freeze_flags;
 #[cfg(test)]
 mod test_funding_deadline;
